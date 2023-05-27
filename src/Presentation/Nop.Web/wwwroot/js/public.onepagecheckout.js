@@ -11,7 +11,7 @@ var Checkout = {
         this.loadWaiting = false;
         this.failureUrl = failureUrl;
 
-        Accordion.disallowAccessToNextSections = true;
+        Accordion.disallowAccessToNextSections = false;
     },
 
     ajaxFailure: function () {
@@ -118,6 +118,7 @@ var Billing = {
     this.saveUrl = saveUrl;
     this.disableBillingAddressCheckoutStep = disableBillingAddressCheckoutStep;
     this.guest = guest;
+    this.save();
   },
 
   newAddress: function(isNew) { 
@@ -318,266 +319,6 @@ var Billing = {
   }
 };
 
-var Shipping = {
-    form: false,
-    saveUrl: false,
-
-    init: function (form, saveUrl) {
-        this.form = form;
-        this.saveUrl = saveUrl;
-    },
-
-  newAddress: function (id, billingAddressId) {
-    isNew = !id;    
-        if (isNew) {
-          this.resetSelectedAddress();         
-          $('#shipping-new-address-form').show();          
-          $('#edit-shipping-address-button').hide();
-          $('#delete-shipping-address-button').hide();
-        } else {
-          $('#shipping-new-address-form').hide();
-          if (id == billingAddressId || (id != undefined && billingAddressId == undefined)) {
-            $('#edit-shipping-address-button').hide();
-            $("#save-shipping-address-button").hide();
-            $('#delete-shipping-address-button').hide();            
-          } else {
-            $("#save-shipping-address-button").hide();
-            $('#edit-shipping-address-button').show();
-            $('#delete-shipping-address-button').show();
-          }
-        }
-        $(document).trigger({ type: "onepagecheckout_shipping_address_new" });
-        Shipping.initializeCountrySelect();
-    },
-
-    resetSelectedAddress: function () {
-        var selectElement = $('#shipping-address-select');
-        if (selectElement) {
-            selectElement.val('');
-        }
-        $(document).trigger({ type: "onepagecheckout_shipping_address_reset" });
-  },
-
-    editAddress: function (url) {
-      Shipping.resetShippingForm();
-
-      var prefix = 'ShippingNewAddress_';
-      var selectedItem = $('#shipping-address-select').children("option:selected").val();
-      $.ajax({
-        cache: false,
-        type: "GET",
-        url: url,
-        data: {
-          addressId: selectedItem,
-        },
-        success: function (data, textStatus, jqXHR) {
-          $.each(data, function (id, value) {
-            if (value === null)
-              return;
-
-            if (id.indexOf("CustomAddressAttributes") >= 0 && Array.isArray(value)) {
-              $.each(value, function (i, customAttribute) {
-                if (customAttribute.DefaultValue) {
-                  $(`#${customAttribute.ControlId}`).val(
-                    customAttribute.DefaultValue
-                  );
-                } else {
-                  $.each(customAttribute.Values, function (j, attributeValue) {
-                    if (attributeValue.IsPreSelected) {
-                      $(`#${customAttribute.ControlId}`).val(attributeValue.Id);
-                      $(
-                        `#${customAttribute.ControlId}_${attributeValue.Id}`
-                      ).prop("checked", attributeValue.Id);
-                    }
-                  });
-                }
-              });
-
-              return;
-            }
-
-            var val = $(`#${prefix}${id}`).val(value);
-            if (id.indexOf("CountryId") >= 0) {
-              val.trigger("change");
-            }    
-            if (id.indexOf("StateProvinceId") >= 0) {
-              Billing.setSelectedStateId(value);
-            }
-          });
-        },
-        complete: function (jqXHR, textStatus) {
-          $("#shipping-new-address-form").show();
-          $("#edit-shipping-address-button").hide();
-          $("#delete-shipping-address-button").hide();
-          $("#save-shipping-address-button").show();
-        },
-        error: Checkout.ajaxFailure,
-      });
-    },
-
-    saveEditAddress: function (url) {
-      var selectedId;
-      $.ajax({
-        cache: false,
-        url: url + '?opc=true',
-        data: $(this.form).serialize(),
-        type: "POST",
-        success: function (response) {
-          if (response.error) {
-            alert(response.message);
-            return false;
-          } else {
-            selectedId = response.selected_id;
-            Checkout.setStepResponse(response);
-            Shipping.resetShippingForm();
-          }
-        },
-        complete: function () {
-          var selectElement = $('#shipping-address-select');
-          if (selectElement && selectedId) {
-            selectElement.val(selectedId);
-          }
-        },
-        error: Checkout.ajaxFailure
-      });
-    },
-
-    deleteAddress: function (url) {
-      var selectedAddress = $('#shipping-address-select').children("option:selected").val();
-      $.ajax({
-        cache: false,
-        type: "GET",
-        url: url,
-        data: {
-          "addressId": selectedAddress,
-          "opc": 'true'
-        },
-        success: function (response) {
-          Checkout.setStepResponse(response);
-        },
-        error: Checkout.ajaxFailure
-      });
-    },
-
-    save: function () {
-        if (Checkout.loadWaiting !== false) return;
-
-        Checkout.setLoadWaiting('shipping');
-
-        $.ajax({
-            cache: false,
-            url: this.saveUrl,
-            data: $(this.form).serialize(),
-            type: "POST",
-            success: this.nextStep,
-            complete: this.resetLoadWaiting,
-            error: Checkout.ajaxFailure
-        });
-    },
-
-    resetLoadWaiting: function () {
-        Checkout.setLoadWaiting(false);
-    },
-
-    nextStep: function (response) {
-        if (response.error) {
-            if (typeof response.message === 'string') {
-                alert(response.message);
-            } else {
-                alert(response.message.join("\n"));
-            }
-
-            return false;
-        }
-
-        Checkout.setStepResponse(response);
-    },
-
-    initializeCountrySelect: function () {
-        if ($('#opc-shipping').has('select[data-trigger="country-select"]')) {
-            $('#opc-shipping select[data-trigger="country-select"]').countrySelect();
-        }
-  },
-
-    resetShippingForm: function () {
-      $(':input', '#shipping-new-address-form')
-        .not(':button, :submit, :reset, :hidden')
-        .removeAttr('checked').removeAttr('selected')
-      $(':input', '#shipping-new-address-form')
-        .not(':checkbox, :radio, select')
-        .val('');
-
-      $('.address-id', '#shipping-new-address-form').val('0');
-      $('select option[value="0"]', '#shipping-new-address-form').prop('selected', true);
-    }
-};
-
-
-
-var ShippingMethod = {
-    form: false,
-    saveUrl: false,
-    localized_data: false,
-
-    init: function (form, saveUrl, localized_data) {
-        this.form = form;
-        this.saveUrl = saveUrl;
-        this.localized_data = localized_data;
-    },
-
-    validate: function () {
-        var methods = document.getElementsByName('shippingoption');
-        if (methods.length === 0) {
-            alert(this.localized_data.NotAvailableMethodsError);
-            return false;
-        }
-
-        for (var i = 0; i < methods.length; i++) {
-            if (methods[i].checked) {
-                return true;
-            }
-        }
-        alert(this.localized_data.SpecifyMethodError);
-        return false;
-    },
-
-    save: function () {
-        if (Checkout.loadWaiting !== false) return;
-
-        if (this.validate()) {
-            Checkout.setLoadWaiting('shipping-method');
-
-            $.ajax({
-                cache: false,
-                url: this.saveUrl,
-                data: $(this.form).serialize(),
-                type: "POST",
-                success: this.nextStep,
-                complete: this.resetLoadWaiting,
-                error: Checkout.ajaxFailure
-            });
-        }
-    },
-
-    resetLoadWaiting: function () {
-        Checkout.setLoadWaiting(false);
-    },
-
-    nextStep: function (response) {
-        if (response.error) {
-            if (typeof response.message === 'string') {
-                alert(response.message);
-            } else {
-                alert(response.message.join("\n"));
-            }
-
-            return false;
-        }
-
-        Checkout.setStepResponse(response);
-    }
-};
-
 
 
 var PaymentMethod = {
@@ -617,7 +358,8 @@ var PaymentMethod = {
     },
 
     save: function () {
-        if (Checkout.loadWaiting !== false) return;
+      debugger;
+        //if (Checkout.loadWaiting !== false) return;
 
         if (this.validate()) {
             Checkout.setLoadWaiting('payment-method');
